@@ -16,6 +16,17 @@ async function telegram(env, method, body) {
 async function handleCallbackQuery(env, callbackQuery) {
   const [action, listingId] = (callbackQuery.data || "").split(":");
   const chatId = callbackQuery.message.chat.id;
+  const originalMessageId = callbackQuery.message.message_id;
+
+  if (action === "noop") {
+    // Ya se marcó feedback para este auto; el botón queda de recuerdo, no hace nada.
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: callbackQuery.id,
+      text: "Ya marcaste este auto.",
+    });
+    return;
+  }
+
   const sentiment = action === "like" ? "like" : "dislike";
 
   // Saca el spinner de carga del botón cuanto antes.
@@ -23,7 +34,7 @@ async function handleCallbackQuery(env, callbackQuery) {
 
   await env.BOT_AUTOS_DATA.put(
     `pending:${chatId}`,
-    JSON.stringify({ listingId, sentiment }),
+    JSON.stringify({ listingId, sentiment, originalMessageId }),
     { expirationTtl: 3600 }
   );
 
@@ -32,10 +43,21 @@ async function handleCallbackQuery(env, callbackQuery) {
       ? "👍 ¿Qué te gustó de este auto? Respondé a este mensaje."
       : "👎 ¿Qué NO te gustó de este auto? Respondé a este mensaje.";
 
+  // Responde citando el mensaje del auto (Telegram muestra su foto/preview arriba),
+  // así no hay que ir a buscarlo scrolleando.
   await telegram(env, "sendMessage", {
     chat_id: chatId,
     text: prompt,
+    reply_to_message_id: originalMessageId,
     reply_markup: { force_reply: true },
+  });
+
+  // Marca visualmente el mensaje original para saber de un vistazo que ya se contestó.
+  const marker = sentiment === "like" ? "✅ Marcado: me gustó" : "❌ Marcado: no me gustó";
+  await telegram(env, "editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: originalMessageId,
+    reply_markup: { inline_keyboard: [[{ text: marker, callback_data: "noop" }]] },
   });
 }
 
