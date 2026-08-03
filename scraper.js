@@ -1,4 +1,4 @@
-// Bot de búsqueda de autos en MercadoLibre (CABA) -> avisa por Telegram.
+// Bot de búsqueda de autos en MercadoLibre + Kavak (CABA) -> avisa por Telegram con foto.
 // Corre vía GitHub Actions (ver .github/workflows/buscar-autos.yml).
 
 const cheerio = require("cheerio");
@@ -8,6 +8,7 @@ const path = require("path");
 const PRICE_MIN = 8_000_000;
 const PRICE_MAX = 15_000_000;
 const FINANCING_MAX = 5_500_000;
+const KM_MAX = 160_000;
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
 
 // Villa Crespo / Almagro + barrios linderos (~2-3km), todo dentro de CABA.
@@ -35,6 +36,9 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
+const FINANCING_KEYWORDS = /financi|cuotas fijas|acepto financiaci|aceptamos financiaci/i;
+const FINANCING_AMOUNT_RE = /(anticipo|entrega)[^\d$]{0,20}\$?\s?([\d][\d.,]{4,12})/i;
+
 function loadSentIds() {
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
@@ -50,6 +54,14 @@ function saveSentIds(sent) {
 function moneyFromAriaLabel(ariaLabel) {
   if (!ariaLabel) return null;
   const digits = ariaLabel.replace(/[^\d]/g, "");
+  return digits ? parseInt(digits, 10) : null;
+}
+
+function parseKm(text) {
+  if (!text) return null;
+  const m = text.match(/([\d.]+)\s*km/i);
+  if (!m) return null;
+  const digits = m[1].replace(/\D/g, "");
   return digits ? parseInt(digits, 10) : null;
 }
 
@@ -93,7 +105,31 @@ async function fetchBarrio(barrio) {
 
     const location = card.find(".poly-component__location").first().text().trim();
 
-    listings.push({ id, title, link, price, anticipo, location, barrio });
+    const attrsText = card
+      .find(".poly-attributes_list__item")
+      .map((__, li) => $(li).text())
+      .get()
+      .join(" ");
+    const km = parseKm(attrsText);
+
+    const officialStore =
+      card.find('.poly-component__seller svg[aria-label="Tienda oficial"]').length > 0;
+
+    const image = card.find(".poly-component__picture").first().attr("src") || null;
+
+    listings.push({
+      id,
+      source: "ml",
+      title,
+      link,
+      price,
+      anticipo,
+      km,
+      officialStore,
+      image,
+      location,
+      barrio,
+    });
   });
 
   return listings;
@@ -116,19 +152,24 @@ async function fetchKavakZone(zone) {
   const clean = html.split('\\"').join('"').split("\\/").join("/");
 
   const re =
-    /"id":"(\d+)","url":"(https:\/\/www\.kavak\.com\/ar\/venta\/[^"]+)".*?"title":"([^"]+)","subtitle":"([^"]+)".*?"mainPrice":"([^"]+)"/g;
+    /"id":"(\d+)","url":"(https:\/\/www\.kavak\.com\/ar\/venta\/[^"]+)","image":"([^"]*)".*?"title":"([^"]+)","subtitle":"([^"]+)".*?"mainPrice":"([^"]+)"/g;
 
   const listings = [];
   let m;
   while ((m = re.exec(clean)) !== null) {
-    const [, id, link, title, subtitle, priceStr] = m;
+    const [, id, link, imagePath, title, subtitle, priceStr] = m;
     const price = parseInt(priceStr.replace(/\D/g, ""), 10);
+    const km = parseKm(subtitle);
     listings.push({
       id: `KAVAK${id}`,
+      source: "kavak",
       title: `${title.replace(" • ", " ")} ${subtitle.split("•")[0].trim()}`.trim(),
       link,
       price,
       anticipo: null, // Kavak no informa anticipo fijo por aviso (financiamiento vía simulador de cuotas).
+      km,
+      officialStore: true, // Kavak siempre es el vendedor (empresa), equivalente a concesionaria.
+      image: imagePath ? `https://images.kavak.services/${imagePath}` : null,
       location: zone.label,
       barrio: zone.value,
     });
@@ -136,53 +177,103 @@ async function fetchKavakZone(zone) {
   return listings;
 }
 
-function evaluateListing(listing) {
+async function fetchMLFinancingFromDescription(link) {
+  try {
+    const res = await fetch(link, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept-Language": "es-AR,es;q=0.9",
+      },
+    });
+    if (!res.ok) return { amount: null, mentioned: false };
+    const html = await res.text();
+    const idx = html.indexOf("ui-pdp-description__content");
+    const chunk = idx === -1 ? "" : html.slice(idx, idx + 3000);
+    const $ = cheerio.load(chunk);
+    const text = $.text() || chunk;
+
+    const amountMatch = text.match(FINANCING_AMOUNT_RE);
+    const amount = amountMatch ? parseInt(amountMatch[2].replace(/\D/g, ""), 10) : null;
+    const mentioned = amount != null || FINANCING_KEYWORDS.test(text);
+    return { amount, mentioned };
+  } catch {
+    return { amount: null, mentioned: false };
+  }
+}
+
+async function evaluateListing(listing) {
   if (!listing.price || listing.price < PRICE_MIN || listing.price > PRICE_MAX) {
     return null;
   }
+  if (listing.km != null && listing.km > KM_MAX) {
+    return null;
+  }
+  if (listing.source === "ml" && !listing.officialStore) {
+    return null; // solo concesionarias/tiendas oficiales verificadas
+  }
 
-  let financingStatus;
-  if (listing.anticipo != null) {
-    if (listing.anticipo > FINANCING_MAX) return null; // anticipo excede lo pedido, descartar
+  let financingStatus = "revisar";
+  let anticipo = listing.anticipo;
+
+  if (anticipo != null) {
+    if (anticipo > FINANCING_MAX) return null; // anticipo excede lo pedido, descartar
     financingStatus = "fuerte";
-  } else {
-    financingStatus = "revisar";
+  } else if (listing.source === "ml") {
+    // La tarjeta no trae anticipo: buscamos en la descripción del aviso (solo concesionarias, ya filtradas arriba).
+    const detail = await fetchMLFinancingFromDescription(listing.link);
+    await new Promise((r) => setTimeout(r, 300));
+    if (detail.amount != null) {
+      if (detail.amount > FINANCING_MAX) return null;
+      anticipo = detail.amount;
+      financingStatus = "fuerte";
+    } else if (detail.mentioned) {
+      financingStatus = "revisar-positivo";
+    }
   }
 
   const titleLower = listing.title.toLowerCase();
   const priority = PRIORITY_BRANDS.some((brand) => titleLower.includes(brand));
 
-  return { ...listing, financingStatus, priority };
+  return { ...listing, anticipo, financingStatus, priority };
 }
 
 function formatMoney(n) {
   return "$" + n.toLocaleString("es-AR");
 }
 
-function formatMessage(listing) {
+function formatCaption(listing) {
   const lines = [];
   const tag = listing.priority ? "⭐ " : "";
   lines.push(`${tag}${listing.title}`);
   lines.push(`${formatMoney(listing.price)} — ${listing.location}`);
+  if (listing.km != null) lines.push(`${listing.km.toLocaleString("es-AR")} km`);
   if (listing.financingStatus === "fuerte") {
     lines.push(`✅ Anticipo: ${formatMoney(listing.anticipo)}`);
+  } else if (listing.financingStatus === "revisar-positivo") {
+    lines.push(`💬 Menciona financiación (sin monto fijo) — revisar en el link`);
   } else {
     lines.push(`⚠️ Financiamiento no informado — revisar en el link`);
   }
   lines.push(listing.link);
-  return lines.join("\n");
+  return lines.join("\n").slice(0, 1024); // límite de caption de Telegram
 }
 
-async function sendTelegram(text) {
+async function sendTelegramPhoto(photoUrl, caption) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, photo: photoUrl, caption }),
+  });
+  return res.ok;
+}
+
+async function sendTelegramMessage(text) {
   const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
-      text,
-      disable_web_page_preview: false,
-    }),
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }),
   });
   if (!res.ok) {
     const body = await res.text();
@@ -190,18 +281,13 @@ async function sendTelegram(text) {
   }
 }
 
-function chunkMessages(blocks, maxLen = 3800) {
-  const chunks = [];
-  let current = "";
-  for (const block of blocks) {
-    if (current && (current.length + block.length + 2) > maxLen) {
-      chunks.push(current);
-      current = "";
-    }
-    current += (current ? "\n\n" : "") + block;
+async function sendListing(listing) {
+  const caption = formatCaption(listing);
+  if (listing.image) {
+    const ok = await sendTelegramPhoto(listing.image, caption);
+    if (ok) return;
   }
-  if (current) chunks.push(current);
-  return chunks;
+  await sendTelegramMessage(caption); // fallback sin foto
 }
 
 async function main() {
@@ -217,10 +303,9 @@ async function main() {
     try {
       const listings = await fetchBarrio(barrio);
       for (const listing of listings) {
-        const evaluated = evaluateListing(listing);
-        if (evaluated && !sentIds[evaluated.id]) {
-          allMatches.push(evaluated);
-        }
+        if (sentIds[listing.id]) continue;
+        const evaluated = await evaluateListing(listing);
+        if (evaluated) allMatches.push(evaluated);
       }
     } catch (err) {
       console.error(`Error en barrio ${barrio}:`, err.message);
@@ -232,10 +317,9 @@ async function main() {
     try {
       const listings = await fetchKavakZone(zone);
       for (const listing of listings) {
-        const evaluated = evaluateListing(listing);
-        if (evaluated && !sentIds[evaluated.id]) {
-          allMatches.push(evaluated);
-        }
+        if (sentIds[listing.id]) continue;
+        const evaluated = await evaluateListing(listing);
+        if (evaluated) allMatches.push(evaluated);
       }
     } catch (err) {
       console.error(`Error en Kavak ${zone.value}:`, err.message);
@@ -248,7 +332,7 @@ async function main() {
     new Map(allMatches.map((m) => [m.id, m])).values()
   );
 
-  // Prioridad: Fiat/Chevrolet primero, después por precio ascendente.
+  // Prioridad: Fiat/Chevrolet/Toyota primero, después por precio ascendente.
   uniqueMatches.sort((a, b) => {
     if (a.priority !== b.priority) return a.priority ? -1 : 1;
     return a.price - b.price;
@@ -259,21 +343,21 @@ async function main() {
     return;
   }
 
-  const blocks = uniqueMatches.map(formatMessage);
-  const header = `🚗 ${uniqueMatches.length} auto(s) nuevo(s) en CABA (Villa Crespo/Almagro y zona) entre ${formatMoney(
-    PRICE_MIN
-  )} y ${formatMoney(PRICE_MAX)}:\n`;
-  const chunks = chunkMessages([header, ...blocks]);
-
   if (dryRun) {
     console.log(`[DRY RUN] ${uniqueMatches.length} matches (no se envía ni se guarda estado):\n`);
-    console.log(chunks.join("\n\n---\n\n"));
+    for (const m of uniqueMatches) console.log(formatCaption(m) + `\n[img: ${m.image}]\n---`);
     return;
   }
 
-  for (const chunk of chunks) {
-    await sendTelegram(chunk);
-    await new Promise((r) => setTimeout(r, 300));
+  await sendTelegramMessage(
+    `🚗 ${uniqueMatches.length} auto(s) nuevo(s) en CABA (Villa Crespo/Almagro y zona), solo concesionarias, entre ${formatMoney(
+      PRICE_MIN
+    )} y ${formatMoney(PRICE_MAX)}:`
+  );
+
+  for (const m of uniqueMatches) {
+    await sendListing(m);
+    await new Promise((r) => setTimeout(r, 400));
   }
 
   for (const m of uniqueMatches) {
