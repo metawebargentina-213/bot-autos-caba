@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bot-autos-caba-webhook",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  "kv_namespaces": [
+    {
+      "binding": "BOT_AUTOS_DATA",
+      "id": "888c1ac407dc4bf1b188222f744f99b3"
+    }
+  ]
+}

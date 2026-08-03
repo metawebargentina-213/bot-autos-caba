@@ -2,7 +2,7 @@ name: "Buscar autos CABA"
 
 on:
   schedule:
-    - cron: "0 * * * *" # cada 1 hora
+    - cron: "*/30 * * * *" # cada 30 minutos
   workflow_dispatch: {}
 
 permissions:
@@ -24,6 +24,9 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
 
       - name: Guardar estado (avisos ya enviados)
         run: |

@@ -41,6 +41,12 @@ const STATE_FILE = path.join(__dirname, "sent_ids.json");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// Para guardar metadata de cada auto en Cloudflare KV (la lee el Worker del
+// webhook cuando Nicolás toca ✅/❌, para armar el registro de gustos).
+const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+const CF_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+const CF_KV_NAMESPACE_ID = process.env.CLOUDFLARE_KV_NAMESPACE_ID;
+
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
@@ -303,22 +309,62 @@ function formatCaption(listing) {
   return lines.join("\n").slice(0, 1024); // límite de caption de Telegram
 }
 
-async function sendTelegramPhoto(photoUrl, caption) {
+function feedbackKeyboard(listing) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Me gustó", callback_data: `like:${listing.id}` },
+        { text: "❌ No me gustó", callback_data: `dislike:${listing.id}` },
+      ],
+    ],
+  };
+}
+
+async function saveListingMetadata(listing) {
+  if (!CF_ACCOUNT_ID || !CF_API_TOKEN || !CF_KV_NAMESPACE_ID) return; // opcional: sin esto, se envía igual pero sin botones útiles
+  const url = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/listing:${listing.id}`;
+  try {
+    await fetch(url, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${CF_API_TOKEN}` },
+      body: JSON.stringify({
+        title: listing.title,
+        price: listing.price,
+        km: listing.km,
+        year: listing.year,
+        seller: listing.seller || null,
+        location: listing.location,
+        source: listing.source,
+        financingStatus: listing.financingStatus,
+        link: listing.link,
+      }),
+    });
+  } catch (err) {
+    console.error(`Error guardando metadata en KV (${listing.id}):`, err.message);
+  }
+}
+
+async function sendTelegramPhoto(photoUrl, caption, replyMarkup) {
   const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, photo: photoUrl, caption }),
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, photo: photoUrl, caption, reply_markup: replyMarkup }),
   });
   return res.ok;
 }
 
-async function sendTelegramMessage(text) {
+async function sendTelegramMessage(text, replyMarkup) {
   const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }),
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text,
+      disable_web_page_preview: false,
+      reply_markup: replyMarkup,
+    }),
   });
   if (!res.ok) {
     const body = await res.text();
@@ -328,11 +374,13 @@ async function sendTelegramMessage(text) {
 
 async function sendListing(listing) {
   const caption = formatCaption(listing);
+  const keyboard = feedbackKeyboard(listing);
+  await saveListingMetadata(listing);
   if (listing.image) {
-    const ok = await sendTelegramPhoto(listing.image, caption);
+    const ok = await sendTelegramPhoto(listing.image, caption, keyboard);
     if (ok) return;
   }
-  await sendTelegramMessage(caption); // fallback sin foto
+  await sendTelegramMessage(caption, keyboard); // fallback sin foto
 }
 
 async function main() {
