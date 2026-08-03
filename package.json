@@ -1,0 +1,14 @@
+{
+  "name": "bot-autos-caba",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bot que busca autos en MercadoLibre (CABA, zona Villa Crespo/Almagro y linderos) y avisa por Telegram.",
+  "type": "commonjs",
+  "main": "scraper.js",
+  "scripts": {
+    "start": "node scraper.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}
