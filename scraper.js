@@ -11,6 +11,8 @@ const FINANCING_MAX = 5_500_000;
 const KM_MAX = 160_000;
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
 const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot"];
+// Barrios que aparecen por las búsquedas por concesionaria (sin restricción de barrio) pero quedan lejos.
+const EXCLUDED_LOCATIONS = ["agronomía", "agronomia"];
 
 // Villa Crespo / Almagro + barrios linderos (~2-3km), todo dentro de CABA.
 const BARRIOS = [
@@ -232,6 +234,11 @@ async function evaluateListing(listing) {
 
   const titleLower = listing.title.toLowerCase();
   if (EXCLUDED_BRANDS.some((brand) => titleLower.includes(brand))) {
+    return null;
+  }
+
+  const locationLower = (listing.location || "").toLowerCase();
+  if (EXCLUDED_LOCATIONS.some((loc) => locationLower.includes(loc))) {
     return null;
   }
 
