@@ -14,6 +14,10 @@ const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
 const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot", "ford"];
 // Barrios que aparecen por las búsquedas por concesionaria (sin restricción de barrio) pero quedan lejos.
 const EXCLUDED_LOCATIONS = ["agronomía", "agronomia"];
+// Aprendido del feedback: nada de GNC confirmado en la descripción (asociado a autos de
+// aplicaciones, muy gastados) y nada de rojo (2 dislikes por color en la primera tanda).
+// Solo ML: Kavak no expone estos datos en lo que scrapeamos, ahí no se puede filtrar todavía.
+const EXCLUDED_COLORS = ["rojo"];
 
 // Villa Crespo / Almagro + barrios linderos (~2-3km), todo dentro de CABA.
 const BARRIOS = [
@@ -217,7 +221,7 @@ async function fetchKavakZone(zone) {
   return listings;
 }
 
-async function fetchMLFinancingFromDescription(link) {
+async function fetchMLDetail(link) {
   try {
     const res = await fetch(link, {
       headers: {
@@ -225,19 +229,35 @@ async function fetchMLFinancingFromDescription(link) {
         "Accept-Language": "es-AR,es;q=0.9",
       },
     });
-    if (!res.ok) return { amount: null, mentioned: false };
+    if (!res.ok) return { amount: null, mentioned: false, color: null, gncMentioned: false };
     const html = await res.text();
-    const idx = html.indexOf("ui-pdp-description__content");
-    const chunk = idx === -1 ? "" : html.slice(idx, idx + 3000);
-    const $ = cheerio.load(chunk);
-    const text = $.text() || chunk;
+    const clean = html.split("\\/").join("/").split("\\u002F").join("/");
 
-    const amountMatch = text.match(FINANCING_AMOUNT_RE);
+    const idx = clean.indexOf("ui-pdp-description__content");
+    const chunk = idx === -1 ? "" : clean.slice(idx, idx + 3000);
+    const $ = cheerio.load(chunk);
+    const descText = $.text() || chunk;
+
+    const amountMatch = descText.match(FINANCING_AMOUNT_RE);
     const amount = amountMatch ? parseInt(amountMatch[2].replace(/\D/g, ""), 10) : null;
-    const mentioned = amount != null || FINANCING_KEYWORDS.test(text);
-    return { amount, mentioned };
+    const mentioned = amount != null || FINANCING_KEYWORDS.test(descText);
+
+    // La ficha técnica ("Tipo de combustible": "Nafta/GNC") es poco confiable: a veces
+    // es solo la opción de fábrica y el auto nunca se usó a gas. Mejor confiar en que
+    // el propio vendedor lo mencione en la descripción (ahí sí confirma que lo tiene puesto).
+    const gncMentioned = /\bgnc\b/i.test(descText);
+
+    // Ficha técnica embebida en la página: {"id":"Color","text":"Gris"}, etc.
+    const colorMatch = clean.match(/"id":"Color","text":"([^"]+)"/);
+
+    return {
+      amount,
+      mentioned,
+      gncMentioned,
+      color: colorMatch ? colorMatch[1] : null,
+    };
   } catch {
-    return { amount: null, mentioned: false };
+    return { amount: null, mentioned: false, color: null, gncMentioned: false };
   }
 }
 
@@ -264,14 +284,25 @@ async function evaluateListing(listing) {
 
   let financingStatus = "revisar";
   let anticipo = listing.anticipo;
+  let detail = null;
+
+  if (listing.source === "ml") {
+    // Un solo pedido a la ficha del aviso: financiamiento (si la tarjeta no lo trae) + color + GNC.
+    detail = await fetchMLDetail(listing.link);
+    await new Promise((r) => setTimeout(r, 300));
+
+    if (detail.gncMentioned) {
+      return null; // el vendedor confirma GNC instalado, no solo la opción de fábrica
+    }
+    if (detail.color && EXCLUDED_COLORS.includes(detail.color.toLowerCase())) {
+      return null;
+    }
+  }
 
   if (anticipo != null) {
     if (anticipo > FINANCING_MAX) return null; // anticipo excede lo pedido, descartar
     financingStatus = "fuerte";
-  } else if (listing.source === "ml") {
-    // La tarjeta no trae anticipo: buscamos en la descripción del aviso (solo concesionarias, ya filtradas arriba).
-    const detail = await fetchMLFinancingFromDescription(listing.link);
-    await new Promise((r) => setTimeout(r, 300));
+  } else if (detail) {
     if (detail.amount != null) {
       if (detail.amount > FINANCING_MAX) return null;
       anticipo = detail.amount;

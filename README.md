@@ -7,6 +7,7 @@ Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Fo
 - Modelo 2009 en adelante
 - Anticipo de financiación ≤ $5.500.000 (en ML, si la tarjeta no lo muestra, se busca en la descripción del aviso; si sigue sin haber monto, se avisa igual marcado "revisar financiamiento")
 - En ML, **solo concesionarias** (filtro nativo `seller_type=car_dealer` de MercadoLibre — el "perfil verificado", se descartan particulares). Kavak siempre cuenta como vendedor verificado.
+- Sin GNC confirmado en la descripción del aviso (no alcanza con que la ficha técnica diga "Nafta/GNC", eso suele ser solo la opción de fábrica) y sin color rojo — aprendido del feedback, solo aplica en ML por ahora
 - Ubicado en Capital Federal: MercadoLibre en Villa Crespo/Almagro y barrios linderos (Caballito, Palermo, Chacarita, Colegiales, Balvanera); Kavak en las zonas DOT y Almagro
 - Además, sin restricción de barrio: Autogringo y Carps 2011 (concesionarias de confianza, se buscan por nombre en toda Capital Federal) — marcadas con 🤝, salvo que el auto esté en Agronomía (queda lejos, se descarta igual)
 
@@ -53,4 +54,4 @@ TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=xxx CLOUDFLARE_ACCOUNT_ID=xxx CLOUDFLARE
 
 ## Ajustar criterios
 
-Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `YEAR_MIN`, `PRIORITY_BRANDS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`.
+Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `YEAR_MIN`, `PRIORITY_BRANDS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `EXCLUDED_COLORS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`.
