@@ -10,6 +10,7 @@ const PRICE_MAX = 15_000_000;
 const FINANCING_MAX = 5_500_000;
 const KM_MAX = 160_000;
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
+const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot"];
 
 // Villa Crespo / Almagro + barrios linderos (~2-3km), todo dentro de CABA.
 const BARRIOS = [
@@ -28,6 +29,10 @@ const KAVAK_ZONES = [
   { value: "kavak_dot", label: "Kavak DOT" },
   { value: "almagro", label: "Kavak — Almagro" },
 ];
+
+// Concesionarias puntuales a incluir sin restricción de barrio (Nicolás las conoce y confía en ellas).
+// Se buscan con el ?q= de ML dentro del filtro "Concesionaria" de Capital Federal.
+const DEALER_QUERIES = ["Autogringo", "Automoviles San Jorge", "Carps 2011"];
 
 const STATE_FILE = path.join(__dirname, "sent_ids.json");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -65,19 +70,7 @@ function parseKm(text) {
   return digits ? parseInt(digits, 10) : null;
 }
 
-async function fetchBarrio(barrio) {
-  const url = `https://autos.mercadolibre.com.ar/capital-federal/${barrio}/_PriceRange_${PRICE_MIN}-${PRICE_MAX}`;
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "Accept-Language": "es-AR,es;q=0.9",
-    },
-  });
-  if (!res.ok) {
-    console.error(`[${barrio}] HTTP ${res.status}`);
-    return [];
-  }
-  const html = await res.text();
+function parseMLCards(html, barrio) {
   const $ = cheerio.load(html);
   const listings = [];
 
@@ -112,9 +105,7 @@ async function fetchBarrio(barrio) {
       .join(" ");
     const km = parseKm(attrsText);
 
-    const officialStore =
-      card.find('.poly-component__seller svg[aria-label="Tienda oficial"]').length > 0;
-
+    const seller = card.find(".poly-component__seller").first().text().trim();
     const image = card.find(".poly-component__picture").first().attr("src") || null;
 
     listings.push({
@@ -125,7 +116,7 @@ async function fetchBarrio(barrio) {
       price,
       anticipo,
       km,
-      officialStore,
+      seller,
       image,
       location,
       barrio,
@@ -133,6 +124,37 @@ async function fetchBarrio(barrio) {
   });
 
   return listings;
+}
+
+async function fetchML(url, context) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept-Language": "es-AR,es;q=0.9",
+    },
+  });
+  if (!res.ok) {
+    console.error(`[${context}] HTTP ${res.status}`);
+    return [];
+  }
+  return parseMLCards(await res.text(), context);
+}
+
+// Filtro nativo de ML "Concesionaria" (seller_type=car_dealer): la mayoría de los
+// concesionarios lo tienen cargado, es el equivalente a "perfil verificado".
+async function fetchBarrio(barrio) {
+  const url = `https://autos.mercadolibre.com.ar/capital-federal/${barrio}/concesionaria/_PriceRange_${PRICE_MIN}-${PRICE_MAX}`;
+  return fetchML(url, barrio);
+}
+
+// Concesionarias puntuales, sin restricción de barrio: se buscan por nombre dentro
+// del mismo filtro de Concesionaria + precio en toda Capital Federal.
+async function fetchDealer(query) {
+  const url = `https://autos.mercadolibre.com.ar/capital-federal/concesionaria/_PriceRange_${PRICE_MIN}-${PRICE_MAX}?q=${encodeURIComponent(
+    query
+  )}`;
+  const listings = await fetchML(url, `dealer:${query}`);
+  return listings.map((l) => ({ ...l, barrio: `dealer:${query}`, trustedDealer: true }));
 }
 
 async function fetchKavakZone(zone) {
@@ -168,7 +190,6 @@ async function fetchKavakZone(zone) {
       price,
       anticipo: null, // Kavak no informa anticipo fijo por aviso (financiamiento vía simulador de cuotas).
       km,
-      officialStore: true, // Kavak siempre es el vendedor (empresa), equivalente a concesionaria.
       image: imagePath ? `https://images.kavak.services/${imagePath}` : null,
       location: zone.label,
       barrio: zone.value,
@@ -208,8 +229,10 @@ async function evaluateListing(listing) {
   if (listing.km != null && listing.km > KM_MAX) {
     return null;
   }
-  if (listing.source === "ml" && !listing.officialStore) {
-    return null; // solo concesionarias/tiendas oficiales verificadas
+
+  const titleLower = listing.title.toLowerCase();
+  if (EXCLUDED_BRANDS.some((brand) => titleLower.includes(brand))) {
+    return null;
   }
 
   let financingStatus = "revisar";
@@ -231,8 +254,8 @@ async function evaluateListing(listing) {
     }
   }
 
-  const titleLower = listing.title.toLowerCase();
-  const priority = PRIORITY_BRANDS.some((brand) => titleLower.includes(brand));
+  const priority =
+    PRIORITY_BRANDS.some((brand) => titleLower.includes(brand)) || !!listing.trustedDealer;
 
   return { ...listing, anticipo, financingStatus, priority };
 }
@@ -243,9 +266,10 @@ function formatMoney(n) {
 
 function formatCaption(listing) {
   const lines = [];
-  const tag = listing.priority ? "⭐ " : "";
+  const tag = listing.trustedDealer ? "🤝 " : listing.priority ? "⭐ " : "";
   lines.push(`${tag}${listing.title}`);
-  lines.push(`${formatMoney(listing.price)} — ${listing.location}`);
+  const sellerPart = listing.seller ? ` (${listing.seller})` : "";
+  lines.push(`${formatMoney(listing.price)} — ${listing.location}${sellerPart}`);
   if (listing.km != null) lines.push(`${listing.km.toLocaleString("es-AR")} km`);
   if (listing.financingStatus === "fuerte") {
     lines.push(`✅ Anticipo: ${formatMoney(listing.anticipo)}`);
@@ -327,12 +351,26 @@ async function main() {
     await new Promise((r) => setTimeout(r, 500)); // ser educado con Kavak
   }
 
+  for (const query of DEALER_QUERIES) {
+    try {
+      const listings = await fetchDealer(query);
+      for (const listing of listings) {
+        if (sentIds[listing.id]) continue;
+        const evaluated = await evaluateListing(listing);
+        if (evaluated) allMatches.push(evaluated);
+      }
+    } catch (err) {
+      console.error(`Error buscando concesionaria ${query}:`, err.message);
+    }
+    await new Promise((r) => setTimeout(r, 500)); // ser educado con ML
+  }
+
   // Dedupe entre barrios (mismo aviso puede aparecer en más de uno)
   const uniqueMatches = Array.from(
     new Map(allMatches.map((m) => [m.id, m])).values()
   );
 
-  // Prioridad: Fiat/Chevrolet/Toyota primero, después por precio ascendente.
+  // Prioridad: concesionarias de confianza y Fiat/Chevrolet/Toyota primero, después por precio ascendente.
   uniqueMatches.sort((a, b) => {
     if (a.priority !== b.priority) return a.priority ? -1 : 1;
     return a.price - b.price;
@@ -350,7 +388,7 @@ async function main() {
   }
 
   await sendTelegramMessage(
-    `🚗 ${uniqueMatches.length} auto(s) nuevo(s) en CABA (Villa Crespo/Almagro y zona), solo concesionarias, entre ${formatMoney(
+    `🚗 ${uniqueMatches.length} auto(s) nuevo(s), solo concesionarias, entre ${formatMoney(
       PRICE_MIN
     )} y ${formatMoney(PRICE_MAX)}:`
   );
