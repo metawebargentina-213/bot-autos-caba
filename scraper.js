@@ -8,7 +8,7 @@ const path = require("path");
 const PRICE_MIN = 8_000_000;
 const PRICE_MAX = 15_000_000;
 const FINANCING_MAX = 5_500_000;
-const PRIORITY_BRANDS = ["fiat", "chevrolet"];
+const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
 
 // Villa Crespo / Almagro + barrios linderos (~2-3km), todo dentro de CABA.
 const BARRIOS = [
@@ -19,6 +19,13 @@ const BARRIOS = [
   "chacarita",
   "colegiales",
   "balvanera",
+];
+
+// Zonas de Kavak (filtro real vía query param ?location=, no el slug de URL):
+// sucursal DOT (Núñez, CABA) y zona "Almagro".
+const KAVAK_ZONES = [
+  { value: "kavak_dot", label: "Kavak DOT" },
+  { value: "almagro", label: "Kavak — Almagro" },
 ];
 
 const STATE_FILE = path.join(__dirname, "sent_ids.json");
@@ -89,6 +96,43 @@ async function fetchBarrio(barrio) {
     listings.push({ id, title, link, price, anticipo, location, barrio });
   });
 
+  return listings;
+}
+
+async function fetchKavakZone(zone) {
+  const url = `https://www.kavak.com/ar/usados?location=${zone.value}&min_price=${PRICE_MIN}&max_price=${PRICE_MAX}`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept-Language": "es-AR,es;q=0.9",
+    },
+  });
+  if (!res.ok) {
+    console.error(`[kavak:${zone.value}] HTTP ${res.status}`);
+    return [];
+  }
+  const html = await res.text();
+  // Los datos vienen embebidos como JSON escapado dentro del payload RSC de Next.js.
+  const clean = html.split('\\"').join('"').split("\\/").join("/");
+
+  const re =
+    /"id":"(\d+)","url":"(https:\/\/www\.kavak\.com\/ar\/venta\/[^"]+)".*?"title":"([^"]+)","subtitle":"([^"]+)".*?"mainPrice":"([^"]+)"/g;
+
+  const listings = [];
+  let m;
+  while ((m = re.exec(clean)) !== null) {
+    const [, id, link, title, subtitle, priceStr] = m;
+    const price = parseInt(priceStr.replace(/\D/g, ""), 10);
+    listings.push({
+      id: `KAVAK${id}`,
+      title: `${title.replace(" • ", " ")} ${subtitle.split("•")[0].trim()}`.trim(),
+      link,
+      price,
+      anticipo: null, // Kavak no informa anticipo fijo por aviso (financiamiento vía simulador de cuotas).
+      location: zone.label,
+      barrio: zone.value,
+    });
+  }
   return listings;
 }
 
@@ -182,6 +226,21 @@ async function main() {
       console.error(`Error en barrio ${barrio}:`, err.message);
     }
     await new Promise((r) => setTimeout(r, 500)); // ser educado con ML
+  }
+
+  for (const zone of KAVAK_ZONES) {
+    try {
+      const listings = await fetchKavakZone(zone);
+      for (const listing of listings) {
+        const evaluated = evaluateListing(listing);
+        if (evaluated && !sentIds[evaluated.id]) {
+          allMatches.push(evaluated);
+        }
+      }
+    } catch (err) {
+      console.error(`Error en Kavak ${zone.value}:`, err.message);
+    }
+    await new Promise((r) => setTimeout(r, 500)); // ser educado con Kavak
   }
 
   // Dedupe entre barrios (mismo aviso puede aparecer en más de uno)
