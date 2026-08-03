@@ -8,5 +8,8 @@
       "binding": "BOT_AUTOS_DATA",
       "id": "888c1ac407dc4bf1b188222f744f99b3"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["*/30 * * * *"]
+  }
 }

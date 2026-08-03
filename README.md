@@ -12,26 +12,29 @@ Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Fo
 - Ubicado en Capital Federal: MercadoLibre en Villa Crespo/Almagro y barrios linderos (Caballito, Palermo, Chacarita, Colegiales, Balvanera); Kavak en las zonas DOT y Almagro
 - Además, sin restricción de barrio: Autogringo y Carps 2011 (concesionarias de confianza, se buscan por nombre en toda Capital Federal) — marcadas con 🤝, salvo que el auto esté en Agronomía (queda lejos, se descarta igual)
 
-Corre solo, gratis, vía GitHub Actions (`.github/workflows/buscar-autos.yml`), cada 30 minutos. No hace falta tenerlo abierto ni revisarlo.
+Corre solo, gratis, cada 30 minutos. No hace falta tenerlo abierto ni revisarlo.
 
 Cada aviso llega con dos botones, **✅ Me gustó** / **❌ No me gustó**. Al tocar uno, el bot pregunta al instante qué te gustó (o no) y guarda tu respuesta junto con los datos del auto — así se va armando un registro de tus gustos (marcas, precios, features) para ir afinando qué priorizar.
 
 ## Cómo funciona
 
-1. Cada 30 min, GitHub Actions ejecuta `scraper.js`.
+1. El scraper (`scraper.js`) corre en GitHub Actions y hace todo el trabajo pesado: busca, filtra y manda por Telegram.
 2. El script pide las páginas públicas de `autos.mercadolibre.com.ar` (por barrio, por concesionaria puntual) y `kavak.com/ar/usados` (por zona), sin login ni API paga.
-3. Filtra por precio, km, año, marca excluida y financiamiento; para concesionarias de ML sin anticipo visible, abre el aviso y busca menciones de financiación en la descripción.
+3. Filtra por precio, km, año, motor, marca excluida, color/GNC y financiamiento; para concesionarias de ML sin anticipo visible, abre el aviso y busca menciones de financiación en la descripción.
 4. Prioriza Autogringo/Carps 2011 y Fiat/Chevrolet/Toyota.
 5. Los autos nuevos (no avisados antes) se mandan por Telegram al bot `@nicoautoscaba_bot`, uno por uno con su foto y los botones ✅/❌. La metadata de cada uno se guarda en Cloudflare KV para poder mostrarla después si das feedback.
 6. Guarda los IDs ya avisados en `sent_ids.json` (se commitea solo) para no repetir.
 
-### El webhook de feedback (`worker/`)
+### Quién dispara el scraper cada 30 min
 
-Un [Cloudflare Worker](https://bot-autos-caba-webhook.nicoautoscaba.workers.dev) separado (gratis, plan free) escucha en tiempo real los mensajes que le mandás al bot:
+**El `schedule` de GitHub Actions no es confiable** — en este repo nunca disparó ni una sola vez por su cuenta (bug conocido, reportado seguido por la comunidad en repos nuevos), ni siquiera después de hacer el repo público. Por eso el cron real vive en Cloudflare: el mismo Worker de abajo tiene un **Cron Trigger** (`*/30 * * * *`, nativo de Cloudflare, confiable) que dispara el workflow de GitHub por su API (`workflows/buscar-autos.yml/dispatches`), usando un Personal Access Token de alcance mínimo (`GITHUB_DISPATCH_TOKEN`, permiso único: Actions de este repo). El trigger `schedule` del workflow se dejó como respaldo por si GitHub lo arregla en el futuro, pero no es de quien depende.
 
-- Si tocás ✅/❌, responde al instante preguntando qué te gustó/no te gustó.
-- Tu respuesta se guarda en Cloudflare KV (namespace `bot_autos_data`) junto con los datos del auto: `feedback:<timestamp>_<id>` → `{listingId, sentiment, reason, title, price, km, year, seller, ...}`.
-- Ese registro no ajusta los filtros solo — hay que revisarlo y actualizar `PRIORITY_BRANDS`/`EXCLUDED_BRANDS` a mano en base a los patrones que aparezcan.
+### El webhook + cron (`worker/`)
+
+Un [Cloudflare Worker](https://bot-autos-caba-webhook.nicoautoscaba.workers.dev) separado (gratis, plan free, cuenta `rnico2080@gmail.com`) hace dos cosas:
+
+- **Cron** (cada 30 min): dispara la corrida del scraper en GitHub Actions (ver arriba).
+- **Webhook de Telegram** (tiempo real): si tocás ✅/❌ en un aviso, responde al instante citando el mensaje del auto y preguntando qué te gustó/no te gustó. Tu respuesta se guarda en Cloudflare KV (namespace `bot_autos_data`) junto con los datos del auto: `feedback:<timestamp>_<id>` → `{listingId, sentiment, reason, title, price, km, year, seller, ...}`. Ese registro no ajusta los filtros solo — hay que revisarlo y actualizar `PRIORITY_BRANDS`/`EXCLUDED_BRANDS`/etc. a mano en base a los patrones que aparezcan.
 
 Deploy del Worker: `cd worker && npx wrangler deploy` (con `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID` en el entorno).
 
@@ -40,7 +43,8 @@ Deploy del Worker: `cd worker && npx wrangler deploy` (con `CLOUDFLARE_API_TOKEN
 - Bot de Telegram: `@nicoautoscaba_bot`
 - Secrets en el repo de GitHub: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_KV_NAMESPACE_ID`
 - Cuenta de Cloudflare: `rnico2080@gmail.com` (separada de la cuenta de GitHub de la agencia, a pedido)
-- Worker desplegado en `bot-autos-caba-webhook.nicoautoscaba.workers.dev`, registrado como webhook del bot de Telegram
+- Worker desplegado en `bot-autos-caba-webhook.nicoautoscaba.workers.dev`, registrado como webhook del bot de Telegram y con Cron Trigger propio (`*/30 * * * *`)
+- Repo de GitHub público (necesario para que el trigger `schedule` tenga chance de andar; igual el cron real es el de Cloudflare)
 
 ## Correr manualmente
 

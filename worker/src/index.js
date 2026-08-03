@@ -93,6 +93,30 @@ async function handleMessage(env, message) {
   });
 }
 
+const GITHUB_REPO = "metawebargentina-213/bot-autos-caba";
+const GITHUB_WORKFLOW = "buscar-autos.yml";
+
+// El `schedule` de GitHub Actions no estaba disparando nunca (bug reportado en repos
+// nuevos). Cloudflare sí es confiable, así que el cron real vive acá: cada 30 min
+// dispara el workflow por API en vez de depender de que GitHub lo haga solo.
+async function dispatchGitHubWorkflow(env) {
+  const res = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "bot-autos-caba-webhook",
+      },
+      body: JSON.stringify({ ref: "master" }),
+    }
+  );
+  if (!res.ok) {
+    console.error(`GitHub dispatch error ${res.status}: ${await res.text()}`);
+  }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method !== "POST") {
@@ -117,5 +141,9 @@ export default {
     }
 
     return new Response("ok", { status: 200 });
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(dispatchGitHubWorkflow(env));
   },
 };
