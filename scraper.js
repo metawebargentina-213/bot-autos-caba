@@ -35,7 +35,7 @@ const KAVAK_ZONES = [
 
 // Concesionarias puntuales a incluir sin restricción de barrio (Nicolás las conoce y confía en ellas).
 // Se buscan con el ?q= de ML dentro del filtro "Concesionaria" de Capital Federal.
-const DEALER_QUERIES = ["Autogringo", "Automoviles San Jorge", "Carps 2011"];
+const DEALER_QUERIES = ["Autogringo", "Carps 2011"];
 
 const STATE_FILE = path.join(__dirname, "sent_ids.json");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
