@@ -1,9 +1,10 @@
 # Bot de autos CABA
 
-Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot, preferencia Fiat/Chevrolet/Toyota) y avisa por Telegram con foto cuando hay uno nuevo que cumple:
+Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Ford, preferencia Fiat/Chevrolet/Toyota) y avisa por Telegram con foto cuando hay uno nuevo que cumple:
 
 - Precio entre $8.000.000 y $15.000.000
 - Máximo 160.000 km
+- Modelo 2009 en adelante
 - Anticipo de financiación ≤ $5.500.000 (en ML, si la tarjeta no lo muestra, se busca en la descripción del aviso; si sigue sin haber monto, se avisa igual marcado "revisar financiamiento")
 - En ML, **solo concesionarias** (filtro nativo `seller_type=car_dealer` de MercadoLibre — el "perfil verificado", se descartan particulares). Kavak siempre cuenta como vendedor verificado.
 - Ubicado en Capital Federal: MercadoLibre en Villa Crespo/Almagro y barrios linderos (Caballito, Palermo, Chacarita, Colegiales, Balvanera); Kavak en las zonas DOT y Almagro
@@ -36,4 +37,4 @@ TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=xxx node scraper.js
 
 ## Ajustar criterios
 
-Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `PRIORITY_BRANDS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`.
+Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `YEAR_MIN`, `PRIORITY_BRANDS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`.

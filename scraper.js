@@ -9,8 +9,9 @@ const PRICE_MIN = 8_000_000;
 const PRICE_MAX = 15_000_000;
 const FINANCING_MAX = 5_500_000;
 const KM_MAX = 160_000;
+const YEAR_MIN = 2009;
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
-const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot"];
+const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot", "ford"];
 // Barrios que aparecen por las búsquedas por concesionaria (sin restricción de barrio) pero quedan lejos.
 const EXCLUDED_LOCATIONS = ["agronomía", "agronomia"];
 
@@ -72,6 +73,12 @@ function parseKm(text) {
   return digits ? parseInt(digits, 10) : null;
 }
 
+function parseYear(text) {
+  if (!text) return null;
+  const m = text.match(/\b(19|20)\d{2}\b/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
 function parseMLCards(html, barrio) {
   const $ = cheerio.load(html);
   const listings = [];
@@ -106,6 +113,7 @@ function parseMLCards(html, barrio) {
       .get()
       .join(" ");
     const km = parseKm(attrsText);
+    const year = parseYear(attrsText); // ojo: no sacar el año del título (hay modelos con números, ej. "Peugeot 2008")
 
     const seller = card.find(".poly-component__seller").first().text().trim();
     const image = card.find(".poly-component__picture").first().attr("src") || null;
@@ -118,6 +126,7 @@ function parseMLCards(html, barrio) {
       price,
       anticipo,
       km,
+      year,
       seller,
       image,
       location,
@@ -184,12 +193,14 @@ async function fetchKavakZone(zone) {
     const [, id, link, imagePath, title, subtitle, priceStr] = m;
     const price = parseInt(priceStr.replace(/\D/g, ""), 10);
     const km = parseKm(subtitle);
+    const year = parseYear(subtitle.split("•")[0]);
     listings.push({
       id: `KAVAK${id}`,
       source: "kavak",
       title: `${title.replace(" • ", " ")} ${subtitle.split("•")[0].trim()}`.trim(),
       link,
       price,
+      year,
       anticipo: null, // Kavak no informa anticipo fijo por aviso (financiamiento vía simulador de cuotas).
       km,
       image: imagePath ? `https://images.kavak.services/${imagePath}` : null,
@@ -229,6 +240,9 @@ async function evaluateListing(listing) {
     return null;
   }
   if (listing.km != null && listing.km > KM_MAX) {
+    return null;
+  }
+  if (listing.year != null && listing.year < YEAR_MIN) {
     return null;
   }
 
