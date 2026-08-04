@@ -27,6 +27,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
+          KAVAK_PROXY_URL: ${{ secrets.KAVAK_PROXY_URL }}
+          KAVAK_PROXY_SECRET: ${{ secrets.KAVAK_PROXY_SECRET }}
 
       - name: Guardar estado (avisos ya enviados)
         run: |

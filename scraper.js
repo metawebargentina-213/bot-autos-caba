@@ -46,6 +46,12 @@ const STATE_FILE = path.join(__dirname, "sent_ids.json");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// Proxy de Kavak en Cloudflare (ver worker/): GitHub Actions tiene la IP
+// bloqueada por Kavak, Cloudflare no. Opcional: si no está configurado, cae
+// al fetch directo (que va a fallar en Actions, pero funciona corriendo local).
+const KAVAK_PROXY_URL = process.env.KAVAK_PROXY_URL;
+const KAVAK_PROXY_SECRET = process.env.KAVAK_PROXY_SECRET;
+
 // Para guardar metadata de cada auto en Cloudflare KV (la lee el Worker del
 // webhook cuando Nicolás toca ✅/❌, para armar el registro de gustos).
 const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -188,13 +194,20 @@ async function fetchDealer(query) {
 }
 
 async function fetchKavakZone(zone) {
-  const url = `https://www.kavak.com/ar/usados?location=${zone.value}&min_price=${PRICE_MIN}&max_price=${PRICE_MAX}`;
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "Accept-Language": "es-AR,es;q=0.9",
-    },
-  });
+  const target = `https://www.kavak.com/ar/usados?location=${zone.value}&min_price=${PRICE_MIN}&max_price=${PRICE_MAX}`;
+
+  // GitHub Actions tiene la IP bloqueada por el anti-bot de Kavak (403 directo),
+  // así que se pide a través del proxy en el Worker de Cloudflare, que sí llega.
+  const res = KAVAK_PROXY_URL
+    ? await fetch(`${KAVAK_PROXY_URL}/kavak-proxy?url=${encodeURIComponent(target)}`, {
+        headers: { Authorization: `Bearer ${KAVAK_PROXY_SECRET}` },
+      })
+    : await fetch(target, {
+        headers: {
+          "User-Agent": USER_AGENT,
+          "Accept-Language": "es-AR,es;q=0.9",
+        },
+      });
   if (!res.ok) {
     console.error(`[kavak:${zone.value}] HTTP ${res.status}`);
     return [];

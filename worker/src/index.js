@@ -40,16 +40,18 @@ async function handleCallbackQuery(env, callbackQuery) {
 
   const prompt =
     sentiment === "like"
-      ? "👍 ¿Qué te gustó de este auto? Respondé a este mensaje."
-      : "👎 ¿Qué NO te gustó de este auto? Respondé a este mensaje.";
+      ? "👍 ¿Qué te gustó de este auto? Mandá cualquier mensaje con tu respuesta."
+      : "👎 ¿Qué NO te gustó de este auto? Mandá cualquier mensaje con tu respuesta.";
 
   // Responde citando el mensaje del auto (Telegram muestra su foto/preview arriba),
-  // así no hay que ir a buscarlo scrolleando.
+  // así no hay que ir a buscarlo scrolleando. Sin force_reply: Telegram lo deja
+  // "pegado" para contestar y molesta cada vez que se reabre el chat sin responder.
+  // No hace falta: handleMessage ya matchea cualquier mensaje nuevo contra el
+  // pending en KV, sea o no una respuesta formal.
   await telegram(env, "sendMessage", {
     chat_id: chatId,
     text: prompt,
     reply_to_message_id: originalMessageId,
-    reply_markup: { force_reply: true },
   });
 
   // Marca visualmente el mensaje original para saber de un vistazo que ya se contestó.
@@ -117,8 +119,37 @@ async function dispatchGitHubWorkflow(env) {
   }
 }
 
+// GitHub Actions tiene la IP bloqueada por el anti-bot de Kavak (403), pero
+// Cloudflare no. En vez de migrar todo el scraper para acá, el scraper le pide
+// las páginas de Kavak a este proxy, que sí llega.
+async function handleKavakProxy(request, env) {
+  const auth = request.headers.get("Authorization");
+  if (auth !== `Bearer ${env.WEBHOOK_SECRET}`) {
+    return new Response("unauthorized", { status: 401 });
+  }
+
+  const target = new URL(request.url).searchParams.get("url");
+  if (!target || !/^https:\/\/(www\.)?kavak\.com\//.test(target)) {
+    return new Response("bad url", { status: 400 });
+  }
+
+  const r = await fetch(target, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+      "Accept-Language": "es-AR,es;q=0.9",
+    },
+  });
+  return new Response(await r.text(), { status: r.status });
+}
+
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/kavak-proxy") {
+      return handleKavakProxy(request, env);
+    }
+
     if (request.method !== "POST") {
       return new Response("ok", { status: 200 });
     }
