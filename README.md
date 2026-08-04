@@ -35,13 +35,14 @@ Un [Cloudflare Worker](https://bot-autos-caba-webhook.nicoautoscaba.workers.dev)
 
 - **Cron** (cada 30 min): dispara la corrida del scraper en GitHub Actions (ver arriba).
 - **Webhook de Telegram** (tiempo real): si tocás ✅/❌ en un aviso, responde al instante citando el mensaje del auto y preguntando qué te gustó/no te gustó. Tu respuesta se guarda en Cloudflare KV (namespace `bot_autos_data`) junto con los datos del auto: `feedback:<timestamp>_<id>` → `{listingId, sentiment, reason, title, price, km, year, seller, ...}`. Ese registro no ajusta los filtros solo — hay que revisarlo y actualizar `PRIORITY_BRANDS`/`EXCLUDED_BRANDS`/etc. a mano en base a los patrones que aparezcan.
+- **Proxy de Kavak** (`/kavak-proxy`): GitHub Actions tiene la IP bloqueada por el anti-bot de Kavak (403 directo), Cloudflare no. `scraper.js` le pide las páginas de Kavak a este endpoint del Worker en vez de pedírselas directo, protegido con el mismo secreto del webhook (`KAVAK_PROXY_SECRET` = `WEBHOOK_SECRET`). Si `KAVAK_PROXY_URL` no está configurado, cae al fetch directo (sirve para correr local, no para Actions).
 
 Deploy del Worker: `cd worker && npx wrangler deploy` (con `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID` en el entorno).
 
 ## Setup (ya hecho)
 
 - Bot de Telegram: `@nicoautoscaba_bot`
-- Secrets en el repo de GitHub: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_KV_NAMESPACE_ID`
+- Secrets en el repo de GitHub: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_KV_NAMESPACE_ID`, `KAVAK_PROXY_URL`, `KAVAK_PROXY_SECRET`
 - Cuenta de Cloudflare: `rnico2080@gmail.com` (separada de la cuenta de GitHub de la agencia, a pedido)
 - Worker desplegado en `bot-autos-caba-webhook.nicoautoscaba.workers.dev`, registrado como webhook del bot de Telegram y con Cron Trigger propio (`*/30 * * * *`)
 - Repo de GitHub público (necesario para que el trigger `schedule` tenga chance de andar; igual el cron real es el de Cloudflare)
