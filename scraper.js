@@ -430,15 +430,27 @@ async function sendTelegramMessage(text, replyMarkup) {
   }
 }
 
+const MAX_PHOTO_BYTES = 2_000_000; // fotos reales de aviso pesan ~50-300KB; algo así de pesado suele ser una foto rota (ej. negra) en el origen
+
+async function isPhotoUsable(photoUrl) {
+  try {
+    const res = await fetch(photoUrl, { method: "HEAD" });
+    const length = parseInt(res.headers.get("content-length") || "0", 10);
+    return res.ok && length > 0 && length < MAX_PHOTO_BYTES;
+  } catch {
+    return false;
+  }
+}
+
 async function sendListing(listing) {
   const caption = formatCaption(listing);
   const keyboard = feedbackKeyboard(listing);
   await saveListingMetadata(listing);
-  if (listing.image) {
+  if (listing.image && (await isPhotoUsable(listing.image))) {
     const ok = await sendTelegramPhoto(listing.image, caption, keyboard);
     if (ok) return;
   }
-  await sendTelegramMessage(caption, keyboard); // fallback sin foto
+  await sendTelegramMessage(caption, keyboard); // fallback sin foto (o sin foto usable)
 }
 
 async function main() {
