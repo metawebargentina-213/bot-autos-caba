@@ -230,6 +230,69 @@ async function fetchDealer(query) {
   return listings.map((l) => ({ ...l, barrio: `dealer:${query}`, trustedDealer: true }));
 }
 
+// Imola Autos: 3 sucursales, todas en CABA. Concesionaria de confianza (pedida
+// por Nicolás), sin restricción de barrio, igual que Autogringo/Carps 2011/Qualis Cars.
+async function fetchImola() {
+  const url = `https://imolaautos.com/resultados?filter%5Bprice%5D%5Bmin%5D=${PRICE_MIN}&filter%5Bprice%5D%5Bmax%5D=${PRICE_MAX}`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept-Language": "es-AR,es;q=0.9",
+    },
+  });
+  if (!res.ok) {
+    console.error(`[imola] HTTP ${res.status}`);
+    return [];
+  }
+  const $ = cheerio.load(await res.text());
+  const listings = [];
+
+  $(".card.w-100").each((_, el) => {
+    const card = $(el);
+    const rawTitle = card.find(".card-title").first().text().trim();
+    const priceText = card.find(".list-group-item h4").first().text().trim();
+    if (!rawTitle || !priceText) return; // descarta tarjetas que no son autos (ej. sucursales)
+
+    const link = card.find("a").first().attr("href");
+    const idMatch = (link || "").match(/\/automovil\/(\d+)-/);
+    if (!idMatch) return;
+
+    const version = card.find(".bg-gris").first().text().trim();
+    const infoText = card.find(".card-text").first().text().trim();
+    const [yearRaw, fuelRaw, , kmRaw] = infoText.split("/").map((s) => s.trim());
+
+    const price = parseInt(priceText.replace(/\D/g, ""), 10);
+    const year = parseInt(yearRaw, 10) || null;
+    const km = parseKm(kmRaw);
+    const engine = parseEngine(version);
+    const doors = parseDoors(version);
+    const image = card.find("img.car").first().attr("src") || null;
+    const location = card.find(".card-link").first().text().trim();
+
+    listings.push({
+      id: `IMOLA${idMatch[1]}`,
+      source: "imola",
+      title: `${rawTitle} ${version}`.trim(),
+      link,
+      price,
+      priceCurrency: "ARS",
+      anticipo: null,
+      km,
+      year,
+      engine,
+      doors,
+      fuel: fuelRaw || null,
+      seller: "Imola Autos",
+      image,
+      location,
+      barrio: "imola",
+      trustedDealer: true,
+    });
+  });
+
+  return listings;
+}
+
 async function fetchKavakZone(zone) {
   const target = `https://www.kavak.com/ar/usados?location=${zone.value}&min_price=${PRICE_MIN}&max_price=${PRICE_MAX}`;
 
@@ -352,6 +415,11 @@ async function evaluateListing(listing) {
     return null;
   }
   if (listing.doors != null && (listing.doors < DOORS_MIN || listing.doors > DOORS_MAX)) {
+    return null;
+  }
+  // GNC como dato estructurado (ej. Imola: "Nafta/GNC" en el campo de combustible),
+  // a diferencia de ML donde ese mismo texto en la ficha técnica es poco confiable.
+  if (listing.fuel && /gnc/i.test(listing.fuel)) {
     return null;
   }
 
@@ -562,6 +630,17 @@ async function main() {
       console.error(`Error buscando concesionaria ${query}:`, err.message);
     }
     await new Promise((r) => setTimeout(r, 500)); // ser educado con ML
+  }
+
+  try {
+    const listings = await fetchImola();
+    for (const listing of listings) {
+      if (sentIds[listing.id]) continue;
+      const evaluated = await evaluateListing(listing);
+      if (evaluated) allMatches.push(evaluated);
+    }
+  } catch (err) {
+    console.error("Error en Imola Autos:", err.message);
   }
 
   // Dedupe entre barrios (mismo aviso puede aparecer en más de uno)
