@@ -11,7 +11,8 @@ Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Fo
 - En ML, **solo concesionarias** (filtro nativo `seller_type=car_dealer` de MercadoLibre — el "perfil verificado", se descartan particulares). Kavak siempre cuenta como vendedor verificado.
 - Sin GNC confirmado en la descripción del aviso (no alcanza con que la ficha técnica diga "Nafta/GNC", eso suele ser solo la opción de fábrica) y sin color rojo — aprendido del feedback, solo aplica en ML por ahora
 - Ubicado en Capital Federal: MercadoLibre en Villa Crespo/Almagro y barrios linderos (Caballito, Palermo, Chacarita, Colegiales, Balvanera); Kavak en las zonas DOT y Almagro
-- Además, sin restricción de barrio: Autogringo y Carps 2011 (concesionarias de confianza, se buscan por nombre en toda Capital Federal) — marcadas con 🤝, salvo que el auto esté en Agronomía (queda lejos, se descarta igual)
+- Además, sin restricción de barrio: Autogringo, Carps 2011 y Qualis Cars (concesionarias de confianza, se buscan por nombre en toda Capital Federal) — marcadas con 🤝, salvo que el auto esté en Agronomía (queda lejos, se descarta igual)
+- **Avisos en USD**: ML a veces publica en dólares. Se convierten a pesos con la cotización del [dólar blue](https://api.bluelytics.com.ar/v2/latest) (gratis, sin API key) para poder compararlos contra el rango de precio; el mensaje muestra el original en USD y la conversión, ej. `US$ 6.500 (≈ $10.010.000 blue)`. El anticipo de esos avisos también viene en USD y se convierte igual.
 
 Corre solo, gratis, cada 30 minutos. No hace falta tenerlo abierto ni revisarlo.
 
@@ -22,7 +23,7 @@ Cada aviso llega con dos botones, **✅ Me gustó** / **❌ No me gustó**. Al t
 1. El scraper (`scraper.js`) corre en GitHub Actions y hace todo el trabajo pesado: busca, filtra y manda por Telegram.
 2. El script pide las páginas públicas de `autos.mercadolibre.com.ar` (por barrio, por concesionaria puntual) y `kavak.com/ar/usados` (por zona), sin login ni API paga.
 3. Filtra por precio, km, año, motor, marca excluida, color/GNC y financiamiento; para concesionarias de ML sin anticipo visible, abre el aviso y busca menciones de financiación en la descripción.
-4. Prioriza Autogringo/Carps 2011 y Fiat/Chevrolet/Toyota.
+4. Prioriza Autogringo/Carps 2011/Qualis Cars y Fiat/Chevrolet/Toyota.
 5. Los autos nuevos (no avisados antes) se mandan por Telegram al bot `@nicoautoscaba_bot`, uno por uno con su foto y los botones ✅/❌. La metadata de cada uno se guarda en Cloudflare KV para poder mostrarla después si das feedback.
 6. Guarda los IDs ya avisados en `sent_ids.json` (se commitea solo) para no repetir.
 

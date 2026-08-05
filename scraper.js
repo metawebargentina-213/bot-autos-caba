@@ -42,7 +42,7 @@ const KAVAK_ZONES = [
 
 // Concesionarias puntuales a incluir sin restricción de barrio (Nicolás las conoce y confía en ellas).
 // Se buscan con el ?q= de ML dentro del filtro "Concesionaria" de Capital Federal.
-const DEALER_QUERIES = ["Autogringo", "Carps 2011"];
+const DEALER_QUERIES = ["Autogringo", "Carps 2011", "Qualis Cars"];
 
 const STATE_FILE = path.join(__dirname, "sent_ids.json");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -82,6 +82,30 @@ function moneyFromAriaLabel(ariaLabel) {
   if (!ariaLabel) return null;
   const digits = ariaLabel.replace(/[^\d]/g, "");
   return digits ? parseInt(digits, 10) : null;
+}
+
+// ML pone "279000 dólares" en vez de "279000 pesos argentinos" cuando el aviso
+// está en USD. Sirve para no perder esos avisos: se convierten a pesos blue
+// para poder compararlos contra PRICE_MIN/PRICE_MAX.
+function moneyWithCurrencyFromAriaLabel(ariaLabel) {
+  const amount = moneyFromAriaLabel(ariaLabel);
+  if (amount == null) return null;
+  const currency = /d[oó]lar/i.test(ariaLabel || "") ? "USD" : "ARS";
+  return { amount, currency };
+}
+
+let blueRateCache = null;
+async function getBlueRate() {
+  if (blueRateCache != null) return blueRateCache;
+  try {
+    const res = await fetch("https://api.bluelytics.com.ar/v2/latest");
+    const data = await res.json();
+    blueRateCache = data.blue.value_sell;
+  } catch (err) {
+    console.error("Error obteniendo cotización del dólar blue:", err.message);
+    blueRateCache = null;
+  }
+  return blueRateCache;
 }
 
 function parseKm(text) {
@@ -128,7 +152,9 @@ function parseMLCards(html, barrio) {
       .find(".poly-price__current .andes-money-amount")
       .first()
       .attr("aria-label");
-    const price = moneyFromAriaLabel(priceAria);
+    const priceInfo = moneyWithCurrencyFromAriaLabel(priceAria);
+    const price = priceInfo ? priceInfo.amount : null;
+    const priceCurrency = priceInfo ? priceInfo.currency : "ARS";
 
     const anticipoAria = card
       .find(".poly-price__complements .andes-money-amount")
@@ -157,6 +183,7 @@ function parseMLCards(html, barrio) {
       title,
       link,
       price,
+      priceCurrency,
       anticipo,
       km,
       doors,
@@ -296,7 +323,23 @@ async function fetchMLDetail(link) {
 }
 
 async function evaluateListing(listing) {
-  if (!listing.price || listing.price < PRICE_MIN || listing.price > PRICE_MAX) {
+  if (!listing.price) return null;
+
+  let price = listing.price;
+  let priceUSD = null;
+  let anticipoOverride = listing.anticipo;
+  if (listing.priceCurrency === "USD") {
+    const blueRate = await getBlueRate();
+    if (blueRate == null) return null; // sin cotización no se puede evaluar el precio, mejor no arriesgar
+    priceUSD = listing.price;
+    price = Math.round(listing.price * blueRate);
+    // El anticipo de un aviso en USD viene en USD también (misma moneda que el precio).
+    if (listing.anticipo != null) {
+      anticipoOverride = Math.round(listing.anticipo * blueRate);
+    }
+  }
+
+  if (price < PRICE_MIN || price > PRICE_MAX) {
     return null;
   }
   if (listing.km != null && listing.km > KM_MAX) {
@@ -323,7 +366,7 @@ async function evaluateListing(listing) {
   }
 
   let financingStatus = "revisar";
-  let anticipo = listing.anticipo;
+  let anticipo = anticipoOverride;
   let detail = null;
 
   if (listing.source === "ml") {
@@ -355,7 +398,7 @@ async function evaluateListing(listing) {
   const priority =
     PRIORITY_BRANDS.some((brand) => titleLower.includes(brand)) || !!listing.trustedDealer;
 
-  return { ...listing, anticipo, financingStatus, priority };
+  return { ...listing, price, priceUSD, anticipo, financingStatus, priority };
 }
 
 function formatMoney(n) {
@@ -367,7 +410,11 @@ function formatCaption(listing) {
   const tag = listing.trustedDealer ? "🤝 " : listing.priority ? "⭐ " : "";
   lines.push(`${tag}${listing.title}`);
   const sellerPart = listing.seller ? ` (${listing.seller})` : "";
-  lines.push(`${formatMoney(listing.price)} — ${listing.location}${sellerPart}`);
+  const priceLine =
+    listing.priceUSD != null
+      ? `US$ ${listing.priceUSD.toLocaleString("es-AR")} (≈ ${formatMoney(listing.price)} blue)`
+      : formatMoney(listing.price);
+  lines.push(`${priceLine} — ${listing.location}${sellerPart}`);
   if (listing.km != null) lines.push(`${listing.km.toLocaleString("es-AR")} km`);
   if (listing.financingStatus === "fuerte") {
     lines.push(`✅ Anticipo: ${formatMoney(listing.anticipo)}`);
