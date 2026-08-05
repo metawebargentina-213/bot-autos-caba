@@ -12,6 +12,7 @@ const KM_MAX = 160_000;
 const YEAR_MIN = 2009;
 const ENGINE_MIN = 1.3; // motores 1.2 o menos, afuera
 const DOORS_MIN = 4; // "3 puertas, eso no busco yo" — feedback explícito
+const DOORS_MAX = 5; // "4 a 5 puertas" — aclarado también explícito
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
 const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot", "ford"];
 // Barrios que aparecen por las búsquedas por concesionaria (sin restricción de barrio) pero quedan lejos.
@@ -307,7 +308,7 @@ async function evaluateListing(listing) {
   if (listing.engine != null && listing.engine < ENGINE_MIN) {
     return null;
   }
-  if (listing.doors != null && listing.doors < DOORS_MIN) {
+  if (listing.doors != null && (listing.doors < DOORS_MIN || listing.doors > DOORS_MAX)) {
     return null;
   }
 
