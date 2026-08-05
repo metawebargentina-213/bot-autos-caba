@@ -11,6 +11,7 @@ const FINANCING_MAX = 5_500_000;
 const KM_MAX = 160_000;
 const YEAR_MIN = 2009;
 const ENGINE_MIN = 1.3; // motores 1.2 o menos, afuera
+const DOORS_MIN = 4; // "3 puertas, eso no busco yo" — feedback explícito
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
 const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot", "ford"];
 // Barrios que aparecen por las búsquedas por concesionaria (sin restricción de barrio) pero quedan lejos.
@@ -102,6 +103,12 @@ function parseEngine(text) {
   return m ? parseFloat(m[1]) : null;
 }
 
+function parseDoors(text) {
+  if (!text) return null;
+  const m = text.match(/\b([2-6])\s?(?:ptas?\.?|p)\b/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 function parseMLCards(html, barrio) {
   const $ = cheerio.load(html);
   const listings = [];
@@ -138,6 +145,7 @@ function parseMLCards(html, barrio) {
     const km = parseKm(attrsText);
     const year = parseYear(attrsText); // ojo: no sacar el año del título (hay modelos con números, ej. "Peugeot 2008")
     const engine = parseEngine(title); // la cilindrada sí viene en el título, ej. "... 1.4 Fire ..."
+    const doors = parseDoors(title); // ej. "... 3 Ptas" / "... 5 P"
 
     const seller = card.find(".poly-component__seller").first().text().trim();
     const image = card.find(".poly-component__picture").first().attr("src") || null;
@@ -150,6 +158,7 @@ function parseMLCards(html, barrio) {
       price,
       anticipo,
       km,
+      doors,
       year,
       engine,
       seller,
@@ -296,6 +305,9 @@ async function evaluateListing(listing) {
     return null;
   }
   if (listing.engine != null && listing.engine < ENGINE_MIN) {
+    return null;
+  }
+  if (listing.doors != null && listing.doors < DOORS_MIN) {
     return null;
   }
 
