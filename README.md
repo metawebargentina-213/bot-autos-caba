@@ -1,10 +1,10 @@
 # Bot de autos CABA
 
-Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Ford, preferencia Fiat/Chevrolet/Toyota) y avisa por Telegram con foto cuando hay uno nuevo que cumple:
+Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Ford, preferencia Fiat/Chevrolet/Toyota/Volkswagen Gol) y avisa por Telegram con foto cuando hay uno nuevo que cumple:
 
-- Precio entre $8.000.000 y $15.000.000
+- Precio entre $7.000.000 y $16.000.000
 - Máximo 160.000 km
-- Modelo 2009 en adelante
+- Modelo 2008 en adelante
 - Motor 1.3 en adelante (nada de 1.2 o menos)
 - 4 o 5 puertas (nada de 3, tampoco 6+) — solo cuando el título lo informa
 - Anticipo de financiación ≤ $5.500.000 (en ML, si la tarjeta no lo muestra, se busca en la descripción del aviso; si sigue sin haber monto, se avisa igual marcado "revisar financiamiento")
@@ -24,7 +24,7 @@ Cada aviso llega con dos botones, **✅ Me gustó** / **❌ No me gustó**. Al t
 1. El scraper (`scraper.js`) corre en GitHub Actions y hace todo el trabajo pesado: busca, filtra y manda por Telegram.
 2. El script pide las páginas públicas de `autos.mercadolibre.com.ar` (por barrio, por concesionaria puntual), `kavak.com/ar/usados` (por zona) e `imolaautos.com/resultados` (con filtro de precio propio), sin login ni API paga.
 3. Filtra por precio, km, año, motor, marca excluida, color/GNC y financiamiento; para concesionarias de ML sin anticipo visible, abre el aviso y busca menciones de financiación en la descripción.
-4. Prioriza Autogringo/Carps 2011/Qualis Cars/Imola Autos y Fiat/Chevrolet/Toyota.
+4. Prioriza Autogringo/Carps 2011/Qualis Cars/Imola Autos, Fiat/Chevrolet/Toyota, y el modelo Volkswagen Gol específicamente (no toda la marca VW).
 5. Los autos nuevos (no avisados antes) se mandan por Telegram al bot `@nicoautoscaba_bot`, uno por uno con su foto y los botones ✅/❌. La metadata de cada uno se guarda en Cloudflare KV para poder mostrarla después si das feedback.
 6. Guarda los IDs ya avisados en `sent_ids.json` (se commitea solo) para no repetir.
 
@@ -63,4 +63,4 @@ TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=xxx CLOUDFLARE_ACCOUNT_ID=xxx CLOUDFLARE
 
 ## Ajustar criterios
 
-Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `YEAR_MIN`, `ENGINE_MIN`, `DOORS_MIN`, `DOORS_MAX`, `PRIORITY_BRANDS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `EXCLUDED_COLORS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`.
+Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `YEAR_MIN`, `ENGINE_MIN`, `DOORS_MIN`, `DOORS_MAX`, `PRIORITY_BRANDS`, `PRIORITY_MODELS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `EXCLUDED_COLORS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`.

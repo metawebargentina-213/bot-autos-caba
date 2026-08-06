@@ -5,15 +5,17 @@ const cheerio = require("cheerio");
 const fs = require("fs");
 const path = require("path");
 
-const PRICE_MIN = 8_000_000;
-const PRICE_MAX = 15_000_000;
+const PRICE_MIN = 7_000_000;
+const PRICE_MAX = 16_000_000;
 const FINANCING_MAX = 5_500_000;
 const KM_MAX = 160_000;
-const YEAR_MIN = 2009;
+const YEAR_MIN = 2008;
 const ENGINE_MIN = 1.3; // motores 1.2 o menos, afuera
 const DOORS_MIN = 4; // "3 puertas, eso no busco yo" — feedback explícito
 const DOORS_MAX = 5; // "4 a 5 puertas" — aclarado también explícito
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
+// Modelo puntual (no marca entera): busca cualquier VW igual, pero destaca el Gol.
+const PRIORITY_MODELS = ["gol"];
 const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot", "ford"];
 // Barrios que aparecen por las búsquedas por concesionaria (sin restricción de barrio) pero quedan lejos.
 const EXCLUDED_LOCATIONS = ["agronomía", "agronomia"];
@@ -464,7 +466,9 @@ async function evaluateListing(listing) {
   }
 
   const priority =
-    PRIORITY_BRANDS.some((brand) => titleLower.includes(brand)) || !!listing.trustedDealer;
+    PRIORITY_BRANDS.some((brand) => titleLower.includes(brand)) ||
+    PRIORITY_MODELS.some((model) => new RegExp(`\\b${model}\\b`, "i").test(titleLower)) ||
+    !!listing.trustedDealer;
 
   return { ...listing, price, priceUSD, anticipo, financingStatus, priority };
 }
