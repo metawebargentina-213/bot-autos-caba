@@ -13,6 +13,9 @@ const YEAR_MIN = 2008;
 const ENGINE_MIN = 1.3; // motores 1.2 o menos, afuera
 const DOORS_MIN = 4; // "3 puertas, eso no busco yo" — feedback explícito
 const DOORS_MAX = 5; // "4 a 5 puertas" — aclarado también explícito
+// "Es automático, tiene que ser manual" — feedback explícito. Solo se detecta cuando el
+// título lo aclara (abreviaturas típicas de ML: "At"/"Mt", o escrito completo); si no dice
+// nada, se deja pasar igual que el resto de los filtros best-effort.
 const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
 // Modelo puntual (no marca entera): busca cualquier VW igual, pero destaca el Gol.
 const PRIORITY_MODELS = ["gol"];
@@ -134,6 +137,11 @@ function parseDoors(text) {
   if (!text) return null;
   const m = text.match(/\b([2-6])\s?(?:ptas?\.?|p)\b/i);
   return m ? parseInt(m[1], 10) : null;
+}
+
+function isAutomatic(text) {
+  if (!text) return false;
+  return /\b(at|automátic[oa]|automatic[oa]|tiptronic|cvt|dsg)\b/i.test(text);
 }
 
 function parseMLCards(html, barrio) {
@@ -427,6 +435,9 @@ async function evaluateListing(listing) {
 
   const titleLower = listing.title.toLowerCase();
   if (EXCLUDED_BRANDS.some((brand) => titleLower.includes(brand))) {
+    return null;
+  }
+  if (isAutomatic(listing.title)) {
     return null;
   }
 

@@ -7,6 +7,7 @@ Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Fo
 - Modelo 2008 en adelante
 - Motor 1.3 en adelante (nada de 1.2 o menos)
 - 4 o 5 puertas (nada de 3, tampoco 6+) — solo cuando el título lo informa
+- Solo manual — sin automáticos ("At", "Automático", "Tiptronic", "CVT", "DSG"), solo cuando el título lo aclara
 - Anticipo de financiación ≤ $5.500.000 (en ML, si la tarjeta no lo muestra, se busca en la descripción del aviso; si sigue sin haber monto, se avisa igual marcado "revisar financiamiento")
 - En ML, **solo concesionarias** (filtro nativo `seller_type=car_dealer` de MercadoLibre — el "perfil verificado", se descartan particulares). Kavak siempre cuenta como vendedor verificado.
 - Sin GNC confirmado en la descripción del aviso (no alcanza con que la ficha técnica diga "Nafta/GNC", eso suele ser solo la opción de fábrica) y sin color rojo — aprendido del feedback, solo aplica en ML por ahora
@@ -63,4 +64,4 @@ TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=xxx CLOUDFLARE_ACCOUNT_ID=xxx CLOUDFLARE
 
 ## Ajustar criterios
 
-Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `YEAR_MIN`, `ENGINE_MIN`, `DOORS_MIN`, `DOORS_MAX`, `PRIORITY_BRANDS`, `PRIORITY_MODELS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `EXCLUDED_COLORS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`.
+Todo está al principio de `scraper.js`: `PRICE_MIN`, `PRICE_MAX`, `FINANCING_MAX`, `KM_MAX`, `YEAR_MIN`, `ENGINE_MIN`, `DOORS_MIN`, `DOORS_MAX`, `PRIORITY_BRANDS`, `PRIORITY_MODELS`, `EXCLUDED_BRANDS`, `EXCLUDED_LOCATIONS`, `EXCLUDED_COLORS`, `BARRIOS`, `KAVAK_ZONES`, `DEALER_QUERIES`. El filtro de transmisión (solo manual) es la función `isAutomatic()`.
