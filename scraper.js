@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 
 const PRICE_MIN = 7_000_000;
-const PRICE_MAX = 16_000_000;
+const PRICE_MAX = 25_000_000; // Nicolás, 10/09/2026: subir el techo a $25M (antes $16M)
 const FINANCING_MAX = 5_500_000;
 const KM_MAX = 160_000;
 const YEAR_MIN = 2017; // Nicolás, 10/09/2026: "del 2017 en adelante" (antes 2008)

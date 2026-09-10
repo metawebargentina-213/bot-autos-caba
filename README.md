@@ -5,7 +5,7 @@ Busca autos en MercadoLibre y Kavak (**solo Toyota**, **solo sedán**) y avisa p
 - **Solo Toyota** (filtro duro sobre el título del aviso)
 - **Solo sedán** — la carrocería solo viene como dato en la ficha técnica de ML; Kavak/Imola no la exponen, ahí el aviso pasa igual
 - **Color blanco, gris, negro o plateado/plata** — igual que la carrocería, solo se puede filtrar en avisos de ML (ficha técnica)
-- Precio entre $7.000.000 y $16.000.000
+- Precio entre $7.000.000 y $25.000.000
 - Máximo 160.000 km
 - Modelo 2017 en adelante
 - Motor 1.3 en adelante (nada de 1.2 o menos)
