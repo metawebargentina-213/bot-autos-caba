@@ -9,23 +9,30 @@ const PRICE_MIN = 7_000_000;
 const PRICE_MAX = 16_000_000;
 const FINANCING_MAX = 5_500_000;
 const KM_MAX = 160_000;
-const YEAR_MIN = 2008;
+const YEAR_MIN = 2017; // Nicolás, 10/09/2026: "del 2017 en adelante" (antes 2008)
 const ENGINE_MIN = 1.3; // motores 1.2 o menos, afuera
 const DOORS_MIN = 4; // "3 puertas, eso no busco yo" — feedback explícito
 const DOORS_MAX = 5; // "4 a 5 puertas" — aclarado también explícito
 // "Es automático, tiene que ser manual" — feedback explícito. Solo se detecta cuando el
 // título lo aclara (abreviaturas típicas de ML: "At"/"Mt", o escrito completo); si no dice
 // nada, se deja pasar igual que el resto de los filtros best-effort.
-const PRIORITY_BRANDS = ["fiat", "chevrolet", "toyota"];
-// Modelo puntual (no marca entera): busca cualquier VW igual, pero destaca el Gol.
-const PRIORITY_MODELS = ["gol"];
-const EXCLUDED_BRANDS = ["citroën", "citroen", "peugeot", "ford"];
+// Pedido explícito de Nicolás (10/09/2026): el bot busca SOLO Toyota. Filtro duro
+// sobre el título del aviso — todo lo que no diga "toyota" se descarta.
+const REQUIRED_BRAND = "toyota";
 // Barrios que aparecen por las búsquedas por concesionaria (sin restricción de barrio) pero quedan lejos.
 const EXCLUDED_LOCATIONS = ["agronomía", "agronomia"];
-// Aprendido del feedback: nada de GNC confirmado en la descripción (asociado a autos de
-// aplicaciones, muy gastados) y nada de rojo (2 dislikes por color en la primera tanda).
-// Solo ML: Kavak no expone estos datos en lo que scrapeamos, ahí no se puede filtrar todavía.
-const EXCLUDED_COLORS = ["rojo"];
+// Nada de GNC confirmado en la descripción (asociado a autos de aplicaciones, muy gastados).
+// Color: pedido explícito de Nicolás (10/09/2026) -> solo blanco, gris, negro y plateado/plata.
+// El color solo se conoce en avisos de ML (ficha técnica); Kavak/Imola no lo exponen, así que
+// ahí no se puede filtrar y el aviso pasa igual. Match por substring: "gris oscuro", "gris
+// plata", "plateado" y "plateada" cuentan.
+const ALLOWED_COLORS = ["blanco", "gris", "negro", "plat"];
+
+// Pedido explícito de Nicolás (10/09/2026): solo sedanes. La carrocería, igual que el
+// color, solo viene como dato en la ficha técnica de ML ("Tipo de carrocería": "Sedán");
+// Kavak/Imola no la exponen, ahí el aviso pasa igual. Match por substring: "sed" cubre
+// "Sedán" y "Sedan".
+const REQUIRED_BODY = "sed";
 
 // Villa Crespo / Almagro + barrios linderos (~2-3km), todo dentro de CABA.
 const BARRIOS = [
@@ -363,7 +370,7 @@ async function fetchMLDetail(link) {
         "Accept-Language": "es-AR,es;q=0.9",
       },
     });
-    if (!res.ok) return { amount: null, mentioned: false, color: null, gncMentioned: false };
+    if (!res.ok) return { amount: null, mentioned: false, color: null, body: null, gncMentioned: false };
     const html = await res.text();
     const clean = html.split("\\/").join("/").split("\\u002F").join("/");
 
@@ -383,15 +390,17 @@ async function fetchMLDetail(link) {
 
     // Ficha técnica embebida en la página: {"id":"Color","text":"Gris"}, etc.
     const colorMatch = clean.match(/"id":"Color","text":"([^"]+)"/);
+    const bodyMatch = clean.match(/"id":"Tipo de carrocería","text":"([^"]+)"/);
 
     return {
       amount,
       mentioned,
       gncMentioned,
       color: colorMatch ? colorMatch[1] : null,
+      body: bodyMatch ? bodyMatch[1] : null,
     };
   } catch {
-    return { amount: null, mentioned: false, color: null, gncMentioned: false };
+    return { amount: null, mentioned: false, color: null, body: null, gncMentioned: false };
   }
 }
 
@@ -434,7 +443,7 @@ async function evaluateListing(listing) {
   }
 
   const titleLower = listing.title.toLowerCase();
-  if (EXCLUDED_BRANDS.some((brand) => titleLower.includes(brand))) {
+  if (!titleLower.includes(REQUIRED_BRAND)) {
     return null;
   }
   if (isAutomatic(listing.title)) {
@@ -451,15 +460,21 @@ async function evaluateListing(listing) {
   let detail = null;
 
   if (listing.source === "ml") {
-    // Un solo pedido a la ficha del aviso: financiamiento (si la tarjeta no lo trae) + color + GNC.
+    // Un solo pedido a la ficha del aviso: financiamiento (si la tarjeta no lo trae) + color + carrocería + GNC.
     detail = await fetchMLDetail(listing.link);
     await new Promise((r) => setTimeout(r, 300));
 
     if (detail.gncMentioned) {
       return null; // el vendedor confirma GNC instalado, no solo la opción de fábrica
     }
-    if (detail.color && EXCLUDED_COLORS.includes(detail.color.toLowerCase())) {
-      return null;
+    if (detail.color) {
+      const colorLower = detail.color.toLowerCase();
+      if (!ALLOWED_COLORS.some((c) => colorLower.includes(c))) {
+        return null;
+      }
+    }
+    if (detail.body && !detail.body.toLowerCase().includes(REQUIRED_BODY)) {
+      return null; // solo sedanes (cuando la ficha informa la carrocería)
     }
   }
 
@@ -476,10 +491,9 @@ async function evaluateListing(listing) {
     }
   }
 
-  const priority =
-    PRIORITY_BRANDS.some((brand) => titleLower.includes(brand)) ||
-    PRIORITY_MODELS.some((model) => new RegExp(`\\b${model}\\b`, "i").test(titleLower)) ||
-    !!listing.trustedDealer;
+  // Todo lo que llega acá ya es Toyota; lo único que sigue moviendo el orden hacia
+  // arriba es que venga de una concesionaria de confianza.
+  const priority = !!listing.trustedDealer;
 
   return { ...listing, price, priceUSD, anticipo, financingStatus, priority };
 }
@@ -663,7 +677,7 @@ async function main() {
     new Map(allMatches.map((m) => [m.id, m])).values()
   );
 
-  // Prioridad: concesionarias de confianza y Fiat/Chevrolet/Toyota primero, después por precio ascendente.
+  // Prioridad: concesionarias de confianza primero, después por precio ascendente.
   uniqueMatches.sort((a, b) => {
     if (a.priority !== b.priority) return a.priority ? -1 : 1;
     return a.price - b.price;
@@ -681,7 +695,7 @@ async function main() {
   }
 
   await sendTelegramMessage(
-    `🚗 ${uniqueMatches.length} auto(s) nuevo(s), solo concesionarias, entre ${formatMoney(
+    `🚗 ${uniqueMatches.length} Toyota sedán nuevo(s), solo concesionarias, entre ${formatMoney(
       PRICE_MIN
     )} y ${formatMoney(PRICE_MAX)}:`
   );

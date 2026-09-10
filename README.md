@@ -1,16 +1,19 @@
 # Bot de autos CABA
 
-Busca autos en MercadoLibre y Kavak (cualquier marca excepto Citroën/Peugeot/Ford, preferencia Fiat/Chevrolet/Toyota/Volkswagen Gol) y avisa por Telegram con foto cuando hay uno nuevo que cumple:
+Busca autos en MercadoLibre y Kavak (**solo Toyota**, **solo sedán**) y avisa por Telegram con foto cuando hay uno nuevo que cumple:
 
+- **Solo Toyota** (filtro duro sobre el título del aviso)
+- **Solo sedán** — la carrocería solo viene como dato en la ficha técnica de ML; Kavak/Imola no la exponen, ahí el aviso pasa igual
+- **Color blanco, gris, negro o plateado/plata** — igual que la carrocería, solo se puede filtrar en avisos de ML (ficha técnica)
 - Precio entre $7.000.000 y $16.000.000
 - Máximo 160.000 km
-- Modelo 2008 en adelante
+- Modelo 2017 en adelante
 - Motor 1.3 en adelante (nada de 1.2 o menos)
 - 4 o 5 puertas (nada de 3, tampoco 6+) — solo cuando el título lo informa
 - Solo manual — sin automáticos ("At", "Automático", "Tiptronic", "CVT", "DSG"), solo cuando el título lo aclara
 - Anticipo de financiación ≤ $5.500.000 (en ML, si la tarjeta no lo muestra, se busca en la descripción del aviso; si sigue sin haber monto, se avisa igual marcado "revisar financiamiento")
 - En ML, **solo concesionarias** (filtro nativo `seller_type=car_dealer` de MercadoLibre — el "perfil verificado", se descartan particulares). Kavak siempre cuenta como vendedor verificado.
-- Sin GNC confirmado en la descripción del aviso (no alcanza con que la ficha técnica diga "Nafta/GNC", eso suele ser solo la opción de fábrica) y sin color rojo — aprendido del feedback, solo aplica en ML por ahora
+- Sin GNC confirmado en la descripción del aviso (no alcanza con que la ficha técnica diga "Nafta/GNC", eso suele ser solo la opción de fábrica) — solo aplica en ML
 - Ubicado en Capital Federal: MercadoLibre en Villa Crespo/Almagro y barrios linderos (Caballito, Palermo, Chacarita, Colegiales, Balvanera); Kavak en las zonas DOT y Almagro
 - Además, sin restricción de barrio: Autogringo, Carps 2011 y Qualis Cars (concesionarias de confianza, se buscan por nombre en toda Capital Federal) — marcadas con 🤝, salvo que el auto esté en Agronomía (queda lejos, se descarta igual)
 - **Imola Autos** ([imolaautos.com](https://imolaautos.com)) — sitio propio de esa concesionaria, con sus 3 sucursales en CABA, marcado con 🤝. A diferencia de ML, ahí el combustible es un dato estructurado, así que el filtro de GNC es directo (no hace falta buscarlo en la descripción)
@@ -25,7 +28,7 @@ Cada aviso llega con dos botones, **✅ Me gustó** / **❌ No me gustó**. Al t
 1. El scraper (`scraper.js`) corre en GitHub Actions y hace todo el trabajo pesado: busca, filtra y manda por Telegram.
 2. El script pide las páginas públicas de `autos.mercadolibre.com.ar` (por barrio, por concesionaria puntual), `kavak.com/ar/usados` (por zona) e `imolaautos.com/resultados` (con filtro de precio propio), sin login ni API paga.
 3. Filtra por precio, km, año, motor, marca excluida, color/GNC y financiamiento; para concesionarias de ML sin anticipo visible, abre el aviso y busca menciones de financiación en la descripción.
-4. Prioriza Autogringo/Carps 2011/Qualis Cars/Imola Autos, Fiat/Chevrolet/Toyota, y el modelo Volkswagen Gol específicamente (no toda la marca VW).
+4. Prioriza los avisos de Autogringo/Carps 2011/Qualis Cars/Imola Autos (concesionarias de confianza) — el resto va ordenado por precio ascendente.
 5. Los autos nuevos (no avisados antes) se mandan por Telegram al bot `@nicoautoscaba_bot`, uno por uno con su foto y los botones ✅/❌. La metadata de cada uno se guarda en Cloudflare KV para poder mostrarla después si das feedback.
 6. Guarda los IDs ya avisados en `sent_ids.json` (se commitea solo) para no repetir.
 
